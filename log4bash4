@@ -1,0 +1,219 @@
+#!/bin/bash
+#
+# pub
+#
+log4bash_trace(){
+    local ret=$?
+    __log4bash_log_common "${__LOG4BASH_LOGLEVEL_TRACE}" "trace" "$@"
+    return "${ret}"
+}
+log4bash_debug(){
+    local ret=$?
+    __log4bash_log_common "${__LOG4BASH_LOGLEVEL_DEBUG}" "debug" "$@"
+    return "${ret}"
+}
+log4bash_info(){
+    local ret=$?
+    __log4bash_log_common "${__LOG4BASH_LOGLEVEL_INFO}" "info" "$@"
+    return "${ret}"
+}
+log4bash_warn(){
+    local ret=$?
+    __log4bash_log_common "${__LOG4BASH_LOGLEVEL_WARN}" "warn" "$@"
+    return "${ret}"
+}
+log4bash_error(){
+    local ret=$?
+    __log4bash_log_common "${__LOG4BASH_LOGLEVEL_ERROR}" "error" "$@"
+    return "${ret}"
+}
+log4bash_fatal(){
+    local ret=$?
+    __log4bash_log_common "${__LOG4BASH_LOGLEVEL_FATAL}" "fatal" "$@"
+    return "${ret}"
+}
+#
+# inner
+#
+__log4bash_source_user_conf(){
+    if [ "${__LOG4BASH_ENABLE_DYNAMIC_CHANGE_LOGLEVEL}" = "1" ]
+    then
+        __log4bash_source_user_conf_impl
+    fi
+}
+__log4bash_source_user_conf_impl(){
+    local conf
+    if [ "${LOG4BASH_CONF}" = "" ]
+    then
+        conf=`dirname $0`/"${LOG4BASH_CONF}"
+    else
+        conf="${LOG4BASH_CONF}"
+    fi
+    if [ -r "${conf}" ]
+    then
+        . "${LOG4BASH_CONF}"
+    fi
+}
+__log4bash_init(){
+    eval __LOG4BASH_INIT='${__LOG4BASH_INIT_'${BASHPID}'}'
+    if [ "${__LOG4BASH_INIT}" = "" ]
+    then
+        __LOG4BASH_INIT=1
+        eval '__LOG4BASH_INIT_'${BASHPID}'=1'
+        eval coproc LOG4BASH_${BASHPID}_COPROC '{ (__log4bash_init_impl) }' 2> /dev/null
+    fi
+}
+__log4bash_init_impl(){
+    local s
+    while read s
+    do
+        if [ ${__LOG4BASH_STRICT_APPEND} != '0' ]
+        then
+            tee -a ${__LOG4BASH_LOGFILE_PATH} <<< "${s}" > /dev/null
+        else
+            printf "%s\n" "${s}" >> ${__LOG4BASH_LOGFILE_PATH}
+        fi
+        if [ "${__LOG4BASH_EABLE_LOG_BK}" != "0" ]
+        then
+            if [ $(stat -c %s "${__LOG4BASH_LOGFILE_PATH}") -gt ${__LOG4BASH_LOGFILE_CHANGE_SIZE} ]
+            then
+                __log4bash_lock
+                if [ $(stat -c %s "${__LOG4BASH_LOGFILE_PATH}") -gt ${__LOG4BASH_LOGFILE_CHANGE_SIZE} ]
+                then
+                    mv -v -f "${__LOG4BASH_LOGFILE_PATH}" "${__LOG4BASH_LOGFILE_BK_PATH}"
+                fi
+                __log4bash_unlock
+            fi
+        fi
+    done
+}
+__log4bash_log_common(){
+    local loglevel=$1
+    local kind=$2
+    shift 2
+    if [ "${__LOG4BASH_ENABLE_DYNAMIC_CHANGE_LOGLEVEL}" = "1" ]
+    then
+        __log4bash_source_user_conf
+    fi
+    if [ "${loglevel}" = "1" ]
+    then
+        __log4bash_log "${kind}" "$@"
+    fi
+}
+__log4bash_log(){
+    local msg
+    local msg_flg=0
+    if ((__LOG4BASH_EABLE_DISP != 0))
+    then
+        __log4bash_log_impl "$@"
+        msg_flg=1
+        echo "${msg}" >> ${__LOG4BASH_DISP_TTY}
+    fi
+    if ((__LOG4BASH_EABLE_LOG != 0))
+    then
+        __log4bash_init
+        if (( msg_flg == 0 ))
+        then
+            __log4bash_log_impl "$@"
+        fi
+        eval 'echo "${msg}" >&"${LOG4BASH_'${BASHPID}'_COPROC[1]}"'
+    fi
+}
+__log4bash_log_impl(){
+        local kind=$1
+        shift
+        local wk date_time func_name
+		func_name=${FUNCNAME[4]}
+		if [ "${func_name}" = "main" ] && [ "${FUNCNAME[5]}" = "" ] ; then
+			func_name="---"
+		fi
+
+        wk=""
+        wk="${wk}[$$:${BASHPID}:${PPID}] "
+        wk="${wk}[${BASH_SOURCE[4]}(${BASH_LINENO[3]}):${func_name}] "
+        wk="${wk}[${__LOG4BASH_LOGID}]"
+        date_time="$(date "${__LOG4BASH_DATE_FORMAT}")"
+        msg="${date_time} ${kind} ${wk} $@"
+### #DEBUG#
+### printf "#start##############################################\n"
+### printf "BASH_SOURCE(%s)\n" ${#BASH_SOURCE}
+### for((i=0; i <= ${#BASH_SOURCE}; i++)){
+### 	printf "[%s]\t" ${BASH_SOURCE[i]}
+### }
+### printf "\n"
+### printf "#end################################################\n"
+### #DEBUG#
+### printf "#start##############################################\n"
+### printf "BASH_LINENO(%s)\n" ${#BASH_LINENO}
+### for((i=0; i <= ${#BASH_LINENO}; i++)){
+### 	printf "[%s]\t" ${BASH_LINENO[i]}
+### }
+### printf "\n"
+### printf "#end################################################\n"
+### #DEBUG#
+### printf "#start##############################################\n"
+### printf "FUNCNAME(%s)\n" ${#FUNCNAME}
+### for((i=0; i <= ${#FUNCNAME}; i++)){
+### 	printf "[%s]\t" ${FUNCNAME[i]}
+### }
+### printf "\n"
+### printf "#end################################################\n"
+### #DEBUG#
+}
+__log4bash_lock(){
+    local ret
+    local lock="${__LOG4BASH_LOGFILE_PATH}".d
+    while :
+    do
+        mkdir "${lock}"
+        ret=$?
+        if [ ${ret} = 0 ]
+        then
+            break
+        else
+            usleep 10000    #10ms
+        fi
+    done
+}
+__log4bash_unlock(){
+    local lock="${__LOG4BASH_LOGFILE_PATH}".d
+    rmdir "${lock}"
+}
+
+export __LOG4BASH_DATE_FORMAT=${__LOG4BASH_TIME_FORMAT:='+[%Y/%m/%d %H:%M:%S.%N]'}
+export __LOG4BASH_EABLE_DISP=${__LOG4BASH_EABLE_DISP:='1'}
+export __LOG4BASH_DISP_TTY=${__LOG4BASH_DISP_TTY:='/dev/stdout'}
+export __LOG4BASH_EABLE_LOG=${__LOG4BASH_EABLE_LOG:='1'}
+export __LOG4BASH_LOGFILE_PATH=${__LOG4BASH_LOGFILE_PATH:='/tmp/log4bash.log'}
+export __LOG4BASH_EABLE_LOG_BK=${__LOG4BASH_EABLE_LOG_BK:='1'}
+export __LOG4BASH_LOGFILE_CHANGE_SIZE=${__LOG4BASH_LOGFILE_CHANGE_SIZE:='1000000'}
+export __LOG4BASH_LOGFILE_BK_PATH=${__LOG4BASH_LOGFILE_BK_PATH:='/tmp/log4bash.log.bk'}
+
+export __LOG4BASH_ENABLE_DYNAMIC_CHANGE_LOGLEVEL=${__LOG4BASH_ENABLE_DYNAMIC_CHANGE_LOGLEVEL:='0'}
+export __LOG4BASH_LOGLEVEL_FATAL=${__LOG4BASH_LOGLEVEL_FATAL:='1'}
+export __LOG4BASH_LOGLEVEL_ERROR=${__LOG4BASH_LOGLEVEL_ERROR:='1'}
+export __LOG4BASH_LOGLEVEL_WARN=${__LOG4BASH_LOGLEVEL_WARN:='0'}
+export __LOG4BASH_LOGLEVEL_INFO=${__LOG4BASH_LOGLEVEL_INFO:='0'}
+export __LOG4BASH_LOGLEVEL_DEBUG=${__LOG4BASH_LOGLEVEL_DEBUG:='0'}
+export __LOG4BASH_LOGLEVEL_TRACE=${__LOG4BASH_LOGLEVEL_TRACE:='0'}
+export __LOG4BASH_STRICT_APPEND=${__LOG4BASH_STRICT_APPEND:='1'}
+export __LOG4BASH_LOGID=${__LOG4BASH_LOGID:="LOGID_$$_${BASH_SUBSHELL}"}
+export LOG4BASH_CONF=${LOG4BASH_CONF:=`dirname $0`/"log4bash.conf"}
+export -f log4bash_trace
+export -f log4bash_debug
+export -f log4bash_info
+export -f log4bash_warn
+export -f log4bash_error
+export -f log4bash_fatal
+
+export -f __log4bash_source_user_conf
+export -f __log4bash_source_user_conf_impl
+export -f __log4bash_init
+export -f __log4bash_init_impl
+export -f __log4bash_log_common
+export -f __log4bash_log
+export -f __log4bash_log_impl
+export -f __log4bash_lock
+export -f __log4bash_unlock
+
+__log4bash_source_user_conf_impl
