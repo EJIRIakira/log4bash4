@@ -1,4 +1,8 @@
 #!/bin/bash
+# log4bash4
+# Copyright (c) 2018 EJIRI akira
+# This software is released under the MIT License, see LICENSE.txt.
+# http://opensource.org/licenses/mit-license.php
 #
 # pub
 #
@@ -45,13 +49,13 @@ __log4bash_source_user_conf_impl(){
     local conf
     if [ "${LOG4BASH_CONF}" = "" ]
     then
-        conf=`dirname $0`/"${LOG4BASH_CONF}"
+        conf=`dirname $0`/"${__LOG4BASH_CONF}"
     else
         conf="${LOG4BASH_CONF}"
     fi
-    if [ -r "${conf}" ]
+    if [ -f "${conf}" ] && [ -r "${conf}" ]
     then
-        . "${LOG4BASH_CONF}"
+        . "${conf}"
     fi
 }
 __log4bash_init(){
@@ -101,7 +105,7 @@ __log4bash_log_common(){
     fi
 }
 __log4bash_log(){
-    local msg
+	local output
     local msg_flg=0
     if ((__LOG4BASH_EABLE_DISP != 0))
     then
@@ -134,31 +138,6 @@ __log4bash_log_impl(){
         wk="${wk}[${__LOG4BASH_LOGID}]"
         date_time="$(date "${__LOG4BASH_DATE_FORMAT}")"
         msg="${date_time} ${kind} ${wk} $@"
-### #DEBUG#
-### printf "#start##############################################\n"
-### printf "BASH_SOURCE(%s)\n" ${#BASH_SOURCE}
-### for((i=0; i <= ${#BASH_SOURCE}; i++)){
-### 	printf "[%s]\t" ${BASH_SOURCE[i]}
-### }
-### printf "\n"
-### printf "#end################################################\n"
-### #DEBUG#
-### printf "#start##############################################\n"
-### printf "BASH_LINENO(%s)\n" ${#BASH_LINENO}
-### for((i=0; i <= ${#BASH_LINENO}; i++)){
-### 	printf "[%s]\t" ${BASH_LINENO[i]}
-### }
-### printf "\n"
-### printf "#end################################################\n"
-### #DEBUG#
-### printf "#start##############################################\n"
-### printf "FUNCNAME(%s)\n" ${#FUNCNAME}
-### for((i=0; i <= ${#FUNCNAME}; i++)){
-### 	printf "[%s]\t" ${FUNCNAME[i]}
-### }
-### printf "\n"
-### printf "#end################################################\n"
-### #DEBUG#
 }
 __log4bash_lock(){
     local ret
@@ -198,7 +177,7 @@ export __LOG4BASH_LOGLEVEL_DEBUG=${__LOG4BASH_LOGLEVEL_DEBUG:='0'}
 export __LOG4BASH_LOGLEVEL_TRACE=${__LOG4BASH_LOGLEVEL_TRACE:='0'}
 export __LOG4BASH_STRICT_APPEND=${__LOG4BASH_STRICT_APPEND:='1'}
 export __LOG4BASH_LOGID=${__LOG4BASH_LOGID:="LOGID_$$_${BASH_SUBSHELL}"}
-export LOG4BASH_CONF=${LOG4BASH_CONF:=`dirname $0`/"log4bash.conf"}
+export __LOG4BASH_CONF=log4bash.conf
 export -f log4bash_trace
 export -f log4bash_debug
 export -f log4bash_info
